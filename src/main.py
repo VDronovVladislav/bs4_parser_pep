@@ -1,15 +1,29 @@
 import re
 import logging
-from urllib.parse import urljoin
-
 import requests_cache
+
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
-from constants import BASE_DIR, MAIN_DOC_URL
+from constants import (BASE_DIR, MAIN_DOC_URL, MAIN_PEP_URL, EXPECTED_STATUS)
 from configs import configure_argument_parser, configure_logging
 from outputs import control_output
 from utils import get_response, find_tag
+
+
+STATUS_COUNT_TABLE = {
+    'Active': 0,
+    'Accepted': 0,
+    'Deferred': 0,
+    'Final': 0,
+    'Provisional': 0,
+    'Rejected': 0,
+    'Superseded': 0,
+    'Withdrawn': 0,
+    'Draft': 0,
+    'Total': 0
+}
 
 
 def whats_new(session):
@@ -24,7 +38,7 @@ def whats_new(session):
         'li', attrs={'class': 'toctree-l1'}
     )
 
-    results = [('Ссылка на статью', 'Заголовок', 'Редактор, автор')]
+    results = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор')]
     for section in tqdm(sections_by_python):
         version_a_tag = section.find('a')
         href = version_a_tag['href']
@@ -100,10 +114,64 @@ def download(session):
     logging.info(f'Архив был загружен и сохранён: {archive_path}')
 
 
+def pep(session):
+    response = get_response(session, MAIN_PEP_URL)
+    if response is None:
+        return
+    soup = BeautifulSoup(response.text, features='lxml')
+    main_table = soup.find_all(
+        'table', attrs={'class': 'pep-zero-table docutils align-default'}
+    )
+
+    for table in main_table:
+        table_body = find_tag(table, 'tbody')
+        sections_with_pep = table_body.find_all('tr')
+
+        for section in sections_with_pep:
+            try:
+                preview_status_tag = section.find('abbr').text[1:]
+            except AttributeError:
+                logging.exception(f'Возникла ошибка на {section}')
+            href_section = section.find(
+                'a', attrs={'class': 'pep reference internal'}
+            )
+            pep_href = href_section['href']
+            pep_link = urljoin(MAIN_PEP_URL, pep_href)
+            response = get_response(session, pep_link)
+            if response is None:
+                continue
+
+            soup = BeautifulSoup(response.text, features='lxml')
+            main_dl = find_tag(
+                soup, 'dl', attrs={'class': 'rfc2822 field-list simple'}
+            )
+            pre_status_section = main_dl.find(string=['Status']).parent
+            status = pre_status_section.find_next_sibling().text
+
+            if status not in EXPECTED_STATUS[preview_status_tag]:
+                logging.info(f'''
+                    Несовпадающие статусы: {pep_link},
+                    Статус в карточке: {status},
+                    Ожидаемый статус: {EXPECTED_STATUS[preview_status_tag]}
+                ''')
+                continue
+
+            STATUS_COUNT_TABLE[status] += 1
+            STATUS_COUNT_TABLE['Total'] += 1
+
+    result = [('Статус', 'Количество')]
+    for status, count in STATUS_COUNT_TABLE.items():
+        result.append(
+            (status, count)
+        )
+    return result
+
+
 MODE_TO_FUNCTION = {
     'whats-new': whats_new,
     'latest-versions': latest_versions,
     'download': download,
+    'pep': pep
 }
 
 

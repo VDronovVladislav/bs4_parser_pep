@@ -28,7 +28,7 @@ def configure_argument_parser(available_modes):
         '-o',
         '--output',
         choices=('pretty', 'file'),
-        help='Дополнительные способы вывода дан ных'
+        help='Дополнительные способы вывода данных'
     )
 
     return parser

@@ -69,8 +69,8 @@ def latest_versions(session):
         if 'All versions' in ul.text:
             a_tags = ul.find_all('a')
             break
-        else:
-            raise Exception('Ничего не нашлось')
+    else:
+        raise Exception('Ничего не нашлось')
 
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
     pattern = r'Python (?P<version>\d\.\d+) \((?P<status>.*)\)'
@@ -123,7 +123,7 @@ def pep(session):
         'table', attrs={'class': 'pep-zero-table docutils align-default'}
     )
 
-    for table in main_table:
+    for table in tqdm(main_table):
         table_body = find_tag(table, 'tbody')
         sections_with_pep = table_body.find_all('tr')
 
@@ -149,21 +149,18 @@ def pep(session):
             status = pre_status_section.find_next_sibling().text
 
             if status not in EXPECTED_STATUS[preview_status_tag]:
-                logging.info(f'''
-                    Несовпадающие статусы: {pep_link},
-                    Статус в карточке: {status},
-                    Ожидаемый статус: {EXPECTED_STATUS[preview_status_tag]}
-                ''')
+                logging.info(
+                    f'Несовпадающие статусы: {pep_link}. '
+                    f'Статус в карточке: {status}. '
+                    f'Ожидаемый статус: {EXPECTED_STATUS[preview_status_tag]}.'
+                )
                 continue
 
             STATUS_COUNT_TABLE[status] += 1
-            STATUS_COUNT_TABLE['Total'] += 1
 
+    STATUS_COUNT_TABLE['Total'] = sum(STATUS_COUNT_TABLE.values())
     result = [('Статус', 'Количество')]
-    for status, count in STATUS_COUNT_TABLE.items():
-        result.append(
-            (status, count)
-        )
+    result.extend(STATUS_COUNT_TABLE.items())
     return result
 
 
